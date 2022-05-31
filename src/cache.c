@@ -167,16 +167,16 @@ Set *icache;
 Set *dcache;
 Set *l2cache;
 
-uint32_t offset_size;
+uint32_t offset_bits;
 uint32_t offset_mask;
 
+uint32_t icache_index_bits;
+uint32_t dcache_index_bits;
+uint32_t l2cache_index_bits;
 uint32_t icache_index_mask;
 uint32_t dcache_index_mask;
 uint32_t l2cache_index_mask;
 
-uint32_t icache_index_size;
-uint32_t dcache_index_size;
-uint32_t l2cache_index_size;
 
 
 
@@ -237,21 +237,32 @@ init_cache()
     l2cache[i].start = NULL;
     l2cache[i].end = NULL;
   }
-    offset_size = (uint32_t)log2(blocksize);
-    offset_mask = (1 << offset_size) - 1;
+    offset_bits = (uint32_t)log2(blocksize);
+    offset_mask = (1 << offset_bits) - 1;
 
 
-    icache_index_size = (uint32_t)log2(icacheSets);
-    dcache_index_size = (uint32_t)log2(dcacheSets);
-    l2cache_index_size = (uint32_t)log2(l2cacheSets);
+    icache_index_bits = (uint32_t)log2(icacheSets);
+    dcache_index_bits = (uint32_t)log2(dcacheSets);
+    l2cache_index_bits = (uint32_t)log2(l2cacheSets);
 
-    icache_index_mask = ((1 << icache_index_size) - 1) << offset_size;
-    dcache_index_mask = ((1 << dcache_index_size) - 1) << offset_size;
-    l2cache_index_mask = ((1 << l2cache_index_size) - 1) << offset_size;
+    icache_index_mask = ((1 << icache_index_bits) - 1) << offset_bits;
+    dcache_index_mask = ((1 << dcache_index_bits) - 1) << offset_bits;
+    l2cache_index_mask = ((1 << l2cache_index_bits) - 1) << offset_bits;
 
 
 }
 
+
+uint32_t
+get_addr(uint32_t addr)
+{
+  // Memory address should be ||addr|| == ||tag||index||offset||
+  uint32_t offset = addr & offset_mask;
+  uint32_t index = (addr & icache_index_mask) >> offset_bits;
+  uint32_t tag = addr >> (icache_index_bits + offset_bits);
+
+  return tag, index, offset;
+}
 
 
 
@@ -276,8 +287,9 @@ icache_access(uint32_t addr)
 
   // Memory address should be ||addr|| == ||tag||index||offset||
   uint32_t offset = addr & offset_mask;
-  uint32_t index = (addr & icache_index_mask) >> offset_size;
-  uint32_t tag = addr >> (icache_index_size + offset_size);
+  uint32_t index = (addr & icache_index_mask) >> offset_bits;
+  uint32_t tag = addr >> (icache_index_bits + offset_bits);
+
 
   Block *p = icache[index].start;
 
@@ -302,7 +314,7 @@ icache_access(uint32_t addr)
     setPop(&icache[index]);
   setPush(&icache[index],  b);
 
-  return penalty + icacheHitTime;
+  return icacheHitTime + penalty;
 }
 
 // Perform a memory access through the dcache interface for the address 'addr'
@@ -325,8 +337,8 @@ dcache_access(uint32_t addr)
   dcacheRefs += 1;
 
   uint32_t offset = addr & offset_mask;
-  uint32_t index = (addr & dcache_index_mask) >> offset_size;
-  uint32_t tag = addr >> (dcache_index_size + offset_size);
+  uint32_t index = (addr & dcache_index_mask) >> offset_bits;
+  uint32_t tag = addr >> (dcache_index_bits + offset_bits);
 
   Block *p = dcache[index].start;
 
@@ -352,7 +364,7 @@ dcache_access(uint32_t addr)
     setPop(&dcache[index]);
   setPush(&dcache[index],  b);
 
-  return penalty + dcacheHitTime;
+  return dcacheHitTime + penalty;
 
 }
 
@@ -376,8 +388,8 @@ l2cache_access(uint32_t addr)
   l2cacheRefs += 1;
 
   uint32_t offset = addr & offset_mask;
-  uint32_t index = (addr & l2cache_index_mask) >> offset_size;
-  uint32_t tag = addr >> (l2cache_index_size + offset_size);
+  uint32_t index = (addr & l2cache_index_mask) >> offset_bits;
+  uint32_t tag = addr >> (l2cache_index_bits + offset_bits);
 
   Block *p = l2cache[index].start;
 
@@ -401,6 +413,6 @@ l2cache_access(uint32_t addr)
   setPush(&l2cache[index],  b);
 
   l2cachePenalties += memspeed;
-  return memspeed + l2cacheHitTime;
+  return l2cacheHitTime + memspeed;
 
 }
