@@ -68,7 +68,7 @@ uint64_t l2cachePenalties; // L2$ penalties
 
 typedef struct Block
 {
-  uint32_t val;
+  uint32_t value;
   struct Block *pre, *next;
 }Block;
 
@@ -78,17 +78,35 @@ typedef struct Set
   Block *start, *end;
 }Set;
 
-Block* createBlock(uint32_t val)
+Block* createBlock(uint32_t value)
 {
-  Block *b = (Block*)malloc(sizeof(Block));
-  b->val = val;
-  b->pre = NULL;
-  b->next = NULL;
+  Block *block = (Block*)malloc(sizeof(Block));
+  block->value = value;
+  block->pre = NULL;
+  block->next = NULL;
 
-  return b;
+  return block;
 }
 
-// Didn't check the set size, assume checked by the caller
+
+
+// Pop the first block in a set
+void setPop(Set* s){
+  // If empty, do nothing
+  if(!s->size)
+    return;
+
+  Block *b = s->start;
+  s->start = b->next;
+
+  if(s->start)
+    s->start->pre = NULL;
+
+  (s->size)--;
+  free(b);
+}
+
+// add a block into a set
 void setPush(Set* s,  Block *b)
 {
   // If set not empty, append to the end
@@ -107,28 +125,13 @@ void setPush(Set* s,  Block *b)
   (s->size)++;
 }
 
-// Pop start
-void setPop(Set* s){
-  // If empty, do nothing
-  if(!s->size)
-    return;
-
-  Block *p = s->start;
-  s->start = p->next;
-
-  if(s->start)
-    s->start->pre = NULL;
-
-  (s->size)--;
-  free(p);
-}
-
+// pop a block in a set with index
 Block* setPopIndex(Set* s, int index){
   // Invalid Pop index
   if(index > s->size || index<0)
     return NULL;
 
-  Block *p = s->start;
+  Block *b = s->start;
 
   if(s->size == 1){
     s->start = NULL;
@@ -136,28 +139,28 @@ Block* setPopIndex(Set* s, int index){
   }
   else if (index == 0)
   {
-    s->start = p->next;
+    s->start = b->next;
     s->start->pre = NULL;
   }
   else if (index == s->size - 1)
   {
-    p = s->end;
+    b = s->end;
     s->end = s->end->pre;
     s->end->next = NULL;
   }
   else{
     for(int i=0; i<index; i++)
-      p = p->next;
-    p->pre->next = p->next;
-    p->next->pre = p->pre;
+      b = b->next;
+    b->pre->next = b->next;
+    b->next->pre = b->pre;
   }
 
-  p->next = NULL;
-  p->pre = NULL;
+  b->next = NULL;
+  b->pre = NULL;
 
   (s->size)--;
   //Block ownership transfer to caller
-  return p;
+  return b;
 }
 
 Set *icache;
@@ -279,7 +282,7 @@ icache_access(uint32_t addr)
   Block *p = icache[index].start;
 
   for(int i=0; i<icache[index].size; i++){
-    if(p->val == tag){ // Hit
+    if(p->value == tag){ // Hit
       Block *b = setPopIndex(&icache[index], i); // Get the hit block
       setPush(&icache[index],  b); // move to end of set queue
       return icacheHitTime;
@@ -292,7 +295,6 @@ icache_access(uint32_t addr)
   uint32_t penalty = l2cache_access(addr);
   icachePenalties += penalty;
 
-  // icache[index][rand()%icacheAssoc] = tag; // random replacement
   // Miss replacement - LRU
   Block *b = createBlock(tag);
 
@@ -329,7 +331,7 @@ dcache_access(uint32_t addr)
   Block *p = dcache[index].start;
 
   for(int i=0; i<dcache[index].size; i++){
-    if(p->val == tag){ // Hit
+    if(p->value == tag){ // Hit
       Block *b = setPopIndex(&dcache[index], i); // Get the hit block
       setPush(&dcache[index],  b); // move to end of set queue
       return dcacheHitTime;
@@ -343,7 +345,6 @@ dcache_access(uint32_t addr)
   uint32_t penalty = l2cache_access(addr);
   dcachePenalties += penalty;
 
-  // dcache[index][rand()%icacheAssoc] = tag; // random replacement
   // Miss replacement - LRU
   Block *b = createBlock(tag);
 
@@ -381,7 +382,7 @@ l2cache_access(uint32_t addr)
   Block *p = l2cache[index].start;
 
   for(int i=0; i<l2cache[index].size; i++){
-    if(p->val == tag){ // Hit
+    if(p->value == tag){ // Hit
       Block *b = setPopIndex(&l2cache[index], i); // Get the hit block
       setPush(&l2cache[index],  b); // move to end of set queue
       return l2cacheHitTime;
@@ -391,7 +392,6 @@ l2cache_access(uint32_t addr)
 
   l2cacheMisses += 1;
 
-  // l2cache[index][rand()%icacheAssoc] = tag; // random replacement
   // Miss replacement - LRU
   Block *b = createBlock(tag);
   
